@@ -125,30 +125,33 @@ async function getTotalOwed(user) {
 // TODO: Get the last time this user has sent or received an IOU, in seconds since Jan. 1, 1970
 // Return null if you can't find any activity for the user.
 // HINT: Try looking at the way 'getAllFunctionCalls' is written. You can modify it if you'd like.
-async function getLastActive(user) {
-	user = user.toLowerCase();
-	var function_calls = await getAllFunctionCalls(contractAddress, "add_IOU");
-	//function_calls.concat(await getAllFunctionCalls(contractAddress, "lookup"));
-	var last_call = null;
-	for(var i = 0; i < function_calls.length; i++){
-		var call = function_calls[i];
-		
-		if(call["from"] == user){
-			last_call = call;
+function getLastActive(user) {
+	const all_timestamps = getCallData((call) => {
+		if (call.from == user || call.args[0] == user) {
+			return [call.timestamp];
 		}
-	}
-	if(last_call){
-		return last_call["t"];
-	}
-	return null;
+		return [];
+	}, (call) => {
+		// 找到直接返回
+		return call.from == user || call.args[0] == user;
+	});
+	return Math.max(all_timestamps);
 }
 
 // TODO: add an IOU ('I owe you') to the system
 // The person you owe money is passed as 'creditor'
 // The amount you owe them is passed as 'amount'
-async function add_IOU(creditor, amount) {
-	BlockchainSplitwise.methods.add_IOU(creditor, parseInt(amount)).send({'from': web3.eth.defaultAccount, gas: 3141592});
-	await downloadAll();
+function add_IOU(creditor, amount) {
+	const debtor = web3.eth.defaultAccount;
+	const path = doBFS(creditor, debtor, getCreditorsForUser);
+	if (path != null) {
+		const min_on_cycle = Math.min(findmino(path), amount);
+		return BlockchainSplitwise.add_IOU(creditor, amount, path, min_on_cycle);
+	}
+	// 没有借账环，直接添加就行
+	var x = BlockchainSplitwise.add_IOU(creditor, amount, [], //min_on_cycle=
+		0);
+	return;
 }
 
 // =============================================================================
