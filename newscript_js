@@ -86,10 +86,36 @@ var BlockchainSplitwise = BlockchainSplitwiseContractSpec.at(contractAddress)
 // =============================================================================
 
 // TODO: Add any helper functions here!
-async function getNeighbors(node){
-	// 以数组形式返回
-	//返回node节点欠钱的人
+//获取信息
+function getCallData(extractor_fn, early_stop_fn) {
+	const results = new Set();
+	const all_calls = getAllFunctionCalls(contractAddress, 'add_IOU', early_stop_fn);
+	for (var i = 0; i < all_calls.length; i++) {
+		const extracted_values = extractor_fn(all_calls[i]);
+		for (var j = 0; j < extracted_values.length; j++) {
+			results.add(extracted_values[j]);
+		}
+	}
+	return Array.from(results);
+}
+
+// 查找最短的路径（bfs）
+function BFSFindMinOwed(path) {
+	var minOwed = null;
+	for (var i = 1; i < path.length; i++) {
+		const debtor = path[i-1]
+		const creditor = path[i];
+		const amountOwed = BlockchainSplitwise.lookup(debtor, creditor).toNumber();
+		if (minOwed == null || minOwed > amountOwed) {
+			minOwed = amountOwed;
+		}
+	}
+	return minOwed;
+}
+
+function getNeighbors(){
 	return getCallData((call) => {
+		
 		return [call.args[0]];//这是借账的
 	}, /*early_stop_fn=*/null);
 }
@@ -100,6 +126,7 @@ async function getNeighbors(node){
 // OR
 //   - a list of everyone currently owing or being owed money
 async function getUsers() {
+	
 	//认定everyone who has ever sent or received an IOU为全部users
 	transactions = await getAllFunctionCalls(contractAddress, 'add_IOU');
 	var users = new Set();
@@ -109,23 +136,33 @@ async function getUsers() {
 		users.add(txn.args[0]);//args是数组型
 	}
 	return Array.from(users);
+	
 }
 
 // TODO: Get the total amount owed by the user specified by 'user'
-async function getTotalOwed(user) {
-	var sum = 0;
-	var neighbors = await getNeighbors(users);//获取users所欠总金额。
-	for (let index = 0; index < neighbors.length; index++) {
-		const creditor = neighbors[index];
-		sum += parseInt(await BlockchainSplitwise.lookup(user, creditor));
+function getTotalOwed(user) {
+	var owedAmount = 0;
+	var users = getUsers();
+	for (var i = 0; i < users.length; i++){
+		// console.log(user, users[i], lookup(user, users[i]));
+		owedAmount += lookup(user, users[i]);
 	}
-	return sum;
+	return owedAmount;
 }
 
 // TODO: Get the last time this user has sent or received an IOU, in seconds since Jan. 1, 1970
 // Return null if you can't find any activity for the user.
 // HINT: Try looking at the way 'getAllFunctionCalls' is written. You can modify it if you'd like.
 function getLastActive(user) {
+	/*
+	var functionCalls = getAllFunctionCalls(contractAddress, 'add_IOU');
+	functionCalls = functionCalls
+		.filter((functionCall) => functionCall.from === user || functionCall.args[0] === user)
+		.sort((a, b) => a.timestamp > b.timestamp);
+	if (functionCalls.length > 0) 
+		return functionCalls[0].timestamp
+	return null
+	*/
 	const all_timestamps = getCallData((call) => {
 		if (call.from == user || call.args[0] == user) {
 			return [call.timestamp];
@@ -145,13 +182,11 @@ function add_IOU(creditor, amount) {
 	const debtor = web3.eth.defaultAccount;
 	const path = doBFS(creditor, debtor, getCreditorsForUser);
 	if (path != null) {
-		const min_on_cycle = Math.min(findmino(path), amount);
+		const min_on_cycle = Math.min(BFSFindMinOwed(path), amount);
 		return BlockchainSplitwise.add_IOU(creditor, amount, path, min_on_cycle);
 	}
 	// 没有借账环，直接添加就行
-	var x = BlockchainSplitwise.add_IOU(creditor, amount, [], //min_on_cycle=
-		0);
-	return;
+	BlockchainSplitwise.add_IOU(creditor, amount, [], 0);
 }
 
 // =============================================================================
@@ -231,7 +266,7 @@ $("#all_users").html(getUsers().map(function (u,i) { return "<li>"+u+"</li>" }))
 // It passes the values from the two inputs above
 $("#addiou").click(function() {
   add_IOU($("#creditor").val(), $("#amount").val());
-  window.location.reload(true); // refreshes the page after
+  window.location.reload(false); // refreshes the page after
 });
 
 // This is a log function, provided if you want to display things to the page instead of the JavaScript console
@@ -239,5 +274,3 @@ $("#addiou").click(function() {
 function log(description, obj) {
 	$("#log").html($("#log").html() + description + ": " + JSON.stringify(obj, null, 2) + "\n\n");
 }
-
-
