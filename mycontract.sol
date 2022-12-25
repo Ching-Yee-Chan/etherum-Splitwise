@@ -15,7 +15,7 @@ contract Splitwise {
     //debtbook['debtor']['creditor']保存debtor欠creditor的金额
     mapping(address => mapping(address => uint32)) debtbook;
 
-    function lookup(address debtor, address creditor) public view returns (uint32 ret){
+    function lookup(address debtor, address creditor) external view returns (uint32 ret){
         return debtbook[debtor][creditor];
     }
     //先插入新边再消除环
@@ -24,11 +24,13 @@ contract Splitwise {
      * @param path 欲消去的环，方向由debtor指向creditor，起点与终点必须一致
      * @param flow 环上欲消去的金额，0代表无环
      */
-    function add_IOU(address creditor, uint32 amount, address[] memory path, uint32 flow) public{
+    function add_IOU_chain(address creditor, uint32 amount, address[] calldata path, uint32 flow) external{
         //为防止恶意抹去交易，必须保证数量为正
         require(amount > 0, "transaction amount must be positive!");
         //为防止前端恶意发起溢出攻击，必须防止自环
         require(creditor != msg.sender, "debtor and creditor cannot be the same!");
+        //起点与终点必须一致
+        require(path[0] == path[path.length-1]);
         //STEP 1: 加入新交易
         debtbook[msg.sender][creditor] += amount;
         //此时图中存在环
